@@ -3,7 +3,7 @@ import sys
 import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 
-sys.path.insert(0, "/Users/donnamccourt/reddit-agent")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def make_mock_submission(title, body, score, num_comments, sub="datingover40", created=1700000000.0):
@@ -182,3 +182,38 @@ def test_duplicate_posts_across_hot_and_rising_are_deduplicated():
             posts = reddit_scraper.collect_posts()
 
     assert len(posts) == 1
+
+
+def test_failed_subreddit_is_skipped():
+    env = {
+        "REDDIT_CLIENT_ID": "id",
+        "REDDIT_CLIENT_SECRET": "secret",
+        "REDDIT_USER_AGENT": "agent",
+        "ANTHROPIC_API_KEY": "key",
+        "TELEGRAM_BOT_TOKEN": "token",
+        "TELEGRAM_CHAT_ID": "123",
+        "TARGET_SUBREDDITS": "datingover40,badsubreddit",
+        "MAX_POSTS_PER_SUB": "5",
+    }
+    good_post = make_mock_submission("Good post", "Body", 100, 10)
+    good_sub = MagicMock()
+    good_sub.hot.return_value = [good_post]
+    good_sub.rising.return_value = []
+
+    bad_sub = MagicMock()
+    bad_sub.hot.side_effect = Exception("subreddit not found")
+
+    mock_reddit = MagicMock()
+    mock_reddit.subreddit.side_effect = lambda name: good_sub if name == "datingover40" else bad_sub
+
+    with patch.dict(os.environ, env, clear=True):
+        import config, importlib
+        importlib.reload(config)
+        from src import reddit_scraper
+        importlib.reload(reddit_scraper)
+
+        with patch("src.reddit_scraper.praw.Reddit", return_value=mock_reddit):
+            posts = reddit_scraper.collect_posts()
+
+    assert len(posts) == 1
+    assert posts[0]["subreddit"] == "datingover40"
