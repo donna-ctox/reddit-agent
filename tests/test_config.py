@@ -1,5 +1,6 @@
 import os
 import importlib
+import pytest
 from unittest.mock import patch
 
 
@@ -42,3 +43,10 @@ def test_config_default_subreddits():
         assert "datingover40" in config.TARGET_SUBREDDITS
         assert len(config.TARGET_SUBREDDITS) == 8
         assert config.MAX_POSTS_PER_SUB == 25
+
+
+def test_config_raises_on_missing_required_var():
+    import config
+    with patch.dict(os.environ, {}, clear=True):
+        with pytest.raises(KeyError):
+            importlib.reload(config)

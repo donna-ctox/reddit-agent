@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 
+# override=False (default) means existing env vars take precedence over .env file,
+# which keeps tests safe when using patch.dict(os.environ, ..., clear=True)
 load_dotenv()
 
 REDDIT_CLIENT_ID = os.environ["REDDIT_CLIENT_ID"]
