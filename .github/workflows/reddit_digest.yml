@@ -31,6 +31,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TARGET_SUBREDDITS: ${{ vars.TARGET_SUBREDDITS }}
-          MAX_POSTS_PER_SUB: ${{ vars.MAX_POSTS_PER_SUB }}
+          TARGET_SUBREDDITS: ${{ vars.TARGET_SUBREDDITS || '' }}
+          MAX_POSTS_PER_SUB: ${{ vars.MAX_POSTS_PER_SUB || '25' }}
         run: python src/main.py
