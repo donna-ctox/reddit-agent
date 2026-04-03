@@ -45,7 +45,7 @@ def analyze_posts(posts):
         try:
             with client.messages.stream(
                 model="claude-opus-4-6",
-                max_tokens=2048,
+                max_tokens=4096,
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": prompt}],
             ) as stream:
@@ -95,5 +95,11 @@ def _parse_response(text):
     text = text.strip()
     if text.startswith("```"):
         lines = text.split("\n")
-        text = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
+        # Find the closing fence, if present
+        if lines[-1].strip() == "```":
+            text = "\n".join(lines[1:-1])
+        elif len(lines) > 1:
+            text = "\n".join(lines[1:])
+        else:
+            raise ValueError(f"Malformed response: unclosed markdown fence: {text[:100]}")
     return json.loads(text)
