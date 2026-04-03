@@ -124,6 +124,8 @@ def test_post_dict_has_required_fields():
     assert "engagement_score" in post
     assert "feed_type" in post
     assert "top_comments" in post
+    assert "upvote_ratio" in post
+    assert "created_utc" in post
 
 
 def test_body_truncated_to_500_chars():
