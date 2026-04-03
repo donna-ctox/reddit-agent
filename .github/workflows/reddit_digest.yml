@@ -1,0 +1,36 @@
+name: Reddit Relationship Digest
+
+on:
+  schedule:
+    - cron: "0 9 * * 2,5"  # Tuesdays and Fridays at 9am UTC
+  workflow_dispatch:  # Allow manual runs from GitHub Actions tab
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Reddit digest
+        env:
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TARGET_SUBREDDITS: ${{ vars.TARGET_SUBREDDITS }}
+          MAX_POSTS_PER_SUB: ${{ vars.MAX_POSTS_PER_SUB }}
+        run: python src/main.py
