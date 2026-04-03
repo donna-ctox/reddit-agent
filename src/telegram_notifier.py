@@ -93,7 +93,9 @@ def _format_market_message(analysis, date_str):
     return _truncate("\n".join(lines))
 
 
+_TRUNCATE_SUFFIX = "\n... [truncated]"
+
 def _truncate(text):
     if len(text) <= MAX_CHARS:
         return text
-    return text[:MAX_CHARS] + "\n... [truncated]"
+    return text[: MAX_CHARS - len(_TRUNCATE_SUFFIX)] + _TRUNCATE_SUFFIX

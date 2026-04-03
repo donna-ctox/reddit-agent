@@ -148,4 +148,22 @@ def test_messages_under_4096_chars():
                 telegram_notifier.send_digest(SAMPLE_ANALYSIS)
 
     for call in mock_post.call_args_list:
-        assert len(call[1]["json"]["text"]) <= 4096
+        assert len(call[1]["json"]["text"]) <= 4000
+
+
+def test_send_raises_on_http_error():
+    env = {
+        "REDDIT_CLIENT_ID": "id", "REDDIT_CLIENT_SECRET": "secret",
+        "REDDIT_USER_AGENT": "agent", "ANTHROPIC_API_KEY": "key",
+        "TELEGRAM_BOT_TOKEN": "test_token", "TELEGRAM_CHAT_ID": "99999",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        import config, importlib
+        importlib.reload(config)
+        from src import telegram_notifier
+        importlib.reload(telegram_notifier)
+
+        with patch("src.telegram_notifier.httpx.post", return_value=make_mock_response(400)):
+            with patch("src.telegram_notifier.time.sleep"):
+                with pytest.raises(Exception):
+                    telegram_notifier.send_digest(SAMPLE_ANALYSIS)
