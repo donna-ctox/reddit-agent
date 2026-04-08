@@ -12,7 +12,7 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 _default_subs = "datingover40,datingover30,Divorce,relationship_advice,DeadBedrooms,Marriage,BreakUps,dating_advice"
 TARGET_SUBREDDITS = [
     s.strip()
-    for s in os.environ.get("TARGET_SUBREDDITS", _default_subs).split(",")
+    for s in (os.environ.get("TARGET_SUBREDDITS") or _default_subs).split(",")
     if s.strip()
 ]
 
