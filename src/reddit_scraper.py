@@ -6,7 +6,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
 import config
 
-_HEADERS = {"User-Agent": "reddit-relationship-agent/1.0"}
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 _BASE = "https://www.reddit.com"
 
 
@@ -15,6 +19,7 @@ def collect_posts():
     for subreddit_name in config.TARGET_SUBREDDITS:
         try:
             posts = _scrape_subreddit(subreddit_name)
+            print(f"r/{subreddit_name}: {len(posts)} posts", flush=True)
             all_posts.extend(posts)
         except Exception as e:
             print(f"Warning: skipping r/{subreddit_name} — {e}", flush=True)
@@ -23,8 +28,9 @@ def collect_posts():
 
 def _fetch_json(url):
     resp = requests.get(url, headers=_HEADERS, timeout=15)
+    print(f"  GET {url} → {resp.status_code}", flush=True)
     resp.raise_for_status()
-    time.sleep(1)
+    time.sleep(2)
     return resp.json()
 
 
