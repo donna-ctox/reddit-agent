@@ -1,7 +1,6 @@
 import sys
 import os
 import time
-from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import requests
@@ -32,26 +31,20 @@ def _fetch_json(url, params):
 
 
 def _scrape_subreddit(subreddit_name):
-    now = datetime.now(timezone.utc)
-    week_ago = int((now - timedelta(days=7)).timestamp())
-    day_ago = int((now - timedelta(days=1)).timestamp())
-
-    # "Hot": top-scoring posts from the last 7 days
+    # "Hot": top-scoring recent posts
     hot_data = _fetch_json(_BASE, {
         "subreddit": subreddit_name,
         "size": int(config.MAX_POSTS_PER_SUB * 0.6),
         "sort_type": "score",
         "sort": "desc",
-        "after": week_ago,
     })
 
-    # "Rising": most-commented posts from the last 24 hours
+    # "Rising": most-commented recent posts
     rising_data = _fetch_json(_BASE, {
         "subreddit": subreddit_name,
         "size": config.MAX_POSTS_PER_SUB - int(config.MAX_POSTS_PER_SUB * 0.6),
         "sort_type": "num_comments",
         "sort": "desc",
-        "after": day_ago,
     })
 
     hot_ids = {p["id"] for p in hot_data.get("data", [])}
