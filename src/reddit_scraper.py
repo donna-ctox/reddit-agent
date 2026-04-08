@@ -1,75 +1,94 @@
 import sys
 import os
+import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import praw
+import requests
 import config
+
+_HEADERS = {"User-Agent": "reddit-relationship-agent/1.0"}
+_BASE = "https://www.reddit.com"
 
 
 def collect_posts():
-    reddit = praw.Reddit(
-        client_id=config.REDDIT_CLIENT_ID,
-        client_secret=config.REDDIT_CLIENT_SECRET,
-        user_agent=config.REDDIT_USER_AGENT,
-    )
-
     all_posts = []
     for subreddit_name in config.TARGET_SUBREDDITS:
         try:
-            posts = _scrape_subreddit(reddit, subreddit_name)
+            posts = _scrape_subreddit(subreddit_name)
             all_posts.extend(posts)
         except Exception as e:
             print(f"Warning: skipping r/{subreddit_name} — {e}", flush=True)
-
     return all_posts
 
 
-def _scrape_subreddit(reddit, subreddit_name):
-    subreddit = reddit.subreddit(subreddit_name)
+def _fetch_json(url):
+    resp = requests.get(url, headers=_HEADERS, timeout=15)
+    resp.raise_for_status()
+    time.sleep(1)
+    return resp.json()
+
+
+def _scrape_subreddit(subreddit_name):
     hot_limit = int(config.MAX_POSTS_PER_SUB * 0.6)
     rising_limit = config.MAX_POSTS_PER_SUB - hot_limit
-    hot_posts = list(subreddit.hot(limit=hot_limit))
-    rising_posts = list(subreddit.rising(limit=rising_limit))
-    hot_ids = {s.id for s in hot_posts}
+
+    hot_data = _fetch_json(f"{_BASE}/r/{subreddit_name}/hot.json?limit={hot_limit}&raw_json=1")
+    rising_data = _fetch_json(f"{_BASE}/r/{subreddit_name}/rising.json?limit={rising_limit}&raw_json=1")
+
+    hot_children = hot_data["data"]["children"]
+    rising_children = rising_data["data"]["children"]
+    hot_ids = {c["data"]["id"] for c in hot_children}
 
     seen_ids = set()
     posts = []
 
-    for submission in hot_posts + rising_posts:
-        if submission.id in seen_ids:
+    for child in hot_children + rising_children:
+        post_data = child["data"]
+        pid = post_data["id"]
+        if pid in seen_ids:
             continue
-        seen_ids.add(submission.id)
+        seen_ids.add(pid)
 
-        feed_type = "hot" if submission.id in hot_ids else "rising"
-        top_comments = _get_top_comments(submission)
-        engagement_score = submission.score + submission.num_comments * 3
+        score = post_data.get("score", 0)
+        num_comments = post_data.get("num_comments", 0)
 
         posts.append({
+            "_id": pid,
             "subreddit": subreddit_name,
-            "title": submission.title,
-            "body": (submission.selftext or "")[:500],
-            "score": submission.score,
-            "num_comments": submission.num_comments,
-            "upvote_ratio": submission.upvote_ratio,
-            "created_utc": submission.created_utc,
-            "engagement_score": engagement_score,
-            "feed_type": feed_type,
-            "top_comments": top_comments,
+            "title": post_data.get("title", ""),
+            "body": (post_data.get("selftext") or "")[:500],
+            "score": score,
+            "num_comments": num_comments,
+            "upvote_ratio": post_data.get("upvote_ratio", 0),
+            "created_utc": post_data.get("created_utc", 0),
+            "engagement_score": score + num_comments * 3,
+            "feed_type": "hot" if pid in hot_ids else "rising",
+            "top_comments": [],
         })
+
+    # Fetch comments only for top 5 posts to limit request count
+    top_posts = sorted(posts, key=lambda p: p["engagement_score"], reverse=True)[:5]
+    for post in top_posts:
+        post["top_comments"] = _get_top_comments(subreddit_name, post["_id"])
+
+    for post in posts:
+        del post["_id"]
 
     return posts
 
 
-def _get_top_comments(submission):
+def _get_top_comments(subreddit_name, post_id):
     try:
-        submission.comments.replace_more(limit=0)
-        comments = submission.comments.list()
-        ranked = sorted(
-            [c for c in comments if hasattr(c, "body") and hasattr(c, "score")],
-            key=lambda c: c.score,
-            reverse=True,
+        data = _fetch_json(
+            f"{_BASE}/r/{subreddit_name}/comments/{post_id}.json?limit=10&raw_json=1"
         )
-        return [c.body[:300] for c in ranked[:3]]
+        comments_listing = data[1]["data"]["children"]
+        comments = [
+            c["data"] for c in comments_listing
+            if c.get("kind") == "t1" and c["data"].get("body")
+        ]
+        ranked = sorted(comments, key=lambda c: c.get("score", 0), reverse=True)
+        return [c["body"][:300] for c in ranked[:3]]
     except Exception as e:
         print(f"Warning: could not fetch comments — {e}", flush=True)
         return []
