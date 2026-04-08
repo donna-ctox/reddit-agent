@@ -6,12 +6,12 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def make_reddit_listing(posts_data):
-    return {"data": {"children": [{"kind": "t3", "data": p} for p in posts_data]}}
+def make_pullpush_response(posts_data):
+    return {"data": posts_data}
 
 
 def make_post_data(post_id, title, body="", score=100, num_comments=10,
-                   upvote_ratio=0.92, created=1700000000.0):
+                   upvote_ratio=0.92, created=1700000000):
     return {
         "id": post_id,
         "title": title,
@@ -23,32 +23,21 @@ def make_post_data(post_id, title, body="", score=100, num_comments=10,
     }
 
 
-def make_comments_response(comment_bodies=None):
-    comment_bodies = comment_bodies or ["This really resonates with me"]
-    return [
-        {},
-        {
-            "data": {
-                "children": [
-                    {"kind": "t1", "data": {"body": b, "score": 50}}
-                    for b in comment_bodies
-                ]
-            }
-        },
-    ]
-
-
 def make_mock_get(hot_posts, rising_posts):
+    call_count = {"n": 0}
+
     def mock_get(url, **kwargs):
         response = MagicMock()
         response.raise_for_status.return_value = None
-        if "/hot.json" in url:
-            response.json.return_value = make_reddit_listing(hot_posts)
-        elif "/rising.json" in url:
-            response.json.return_value = make_reddit_listing(rising_posts)
-        elif "/comments/" in url:
-            response.json.return_value = make_comments_response()
+        response.url = url
+        response.status_code = 200
+        params = kwargs.get("params", {})
+        if params.get("sort_type") == "score":
+            response.json.return_value = make_pullpush_response(hot_posts)
+        else:
+            response.json.return_value = make_pullpush_response(rising_posts)
         return response
+
     return mock_get
 
 
@@ -114,7 +103,6 @@ def test_post_dict_has_required_fields():
     for field in ["subreddit", "title", "body", "score", "num_comments",
                   "engagement_score", "feed_type", "top_comments", "upvote_ratio", "created_utc"]:
         assert field in post
-    assert "_id" not in post
 
 
 def test_body_truncated_to_500_chars():
@@ -156,17 +144,21 @@ def test_failed_subreddit_is_skipped():
     env = {**_BASE_ENV, "TARGET_SUBREDDITS": "datingover40,badsubreddit"}
     good_post = make_post_data("id1", "Good post", "Body", 100, 10)
 
+    call_state = {"subs_seen": []}
+
     def mock_get_with_failure(url, **kwargs):
-        if "badsubreddit" in url:
+        params = kwargs.get("params", {})
+        sub = params.get("subreddit", "")
+        if sub == "badsubreddit":
             raise Exception("subreddit not found")
         response = MagicMock()
         response.raise_for_status.return_value = None
-        if "/hot.json" in url:
-            response.json.return_value = make_reddit_listing([good_post])
-        elif "/rising.json" in url:
-            response.json.return_value = make_reddit_listing([])
-        elif "/comments/" in url:
-            response.json.return_value = make_comments_response()
+        response.url = url
+        response.status_code = 200
+        if params.get("sort_type") == "score":
+            response.json.return_value = make_pullpush_response([good_post])
+        else:
+            response.json.return_value = make_pullpush_response([])
         return response
 
     with patch.dict(os.environ, env, clear=True):

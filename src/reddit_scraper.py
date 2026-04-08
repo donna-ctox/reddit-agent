@@ -1,17 +1,14 @@
 import sys
 import os
 import time
+from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import requests
 import config
 
-_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-}
-_BASE = "https://www.reddit.com"
+_HEADERS = {"User-Agent": "reddit-relationship-agent/1.0"}
+_BASE = "https://api.pullpush.io/reddit/search/submission"
 
 
 def collect_posts():
@@ -26,40 +23,56 @@ def collect_posts():
     return all_posts
 
 
-def _fetch_json(url):
-    resp = requests.get(url, headers=_HEADERS, timeout=15)
-    print(f"  GET {url} → {resp.status_code}", flush=True)
+def _fetch_json(url, params):
+    resp = requests.get(url, headers=_HEADERS, params=params, timeout=30)
+    print(f"  GET {resp.url} → {resp.status_code}", flush=True)
     resp.raise_for_status()
-    time.sleep(2)
+    time.sleep(1)
     return resp.json()
 
 
 def _scrape_subreddit(subreddit_name):
-    hot_limit = int(config.MAX_POSTS_PER_SUB * 0.6)
-    rising_limit = config.MAX_POSTS_PER_SUB - hot_limit
+    now = datetime.now(timezone.utc)
+    week_ago = int((now - timedelta(days=7)).timestamp())
+    day_ago = int((now - timedelta(days=1)).timestamp())
 
-    hot_data = _fetch_json(f"{_BASE}/r/{subreddit_name}/hot.json?limit={hot_limit}&raw_json=1")
-    rising_data = _fetch_json(f"{_BASE}/r/{subreddit_name}/rising.json?limit={rising_limit}&raw_json=1")
+    # "Hot": top-scoring posts from the last 7 days
+    hot_data = _fetch_json(_BASE, {
+        "subreddit": subreddit_name,
+        "size": int(config.MAX_POSTS_PER_SUB * 0.6),
+        "sort_type": "score",
+        "sort": "desc",
+        "after": week_ago,
+    })
 
-    hot_children = hot_data["data"]["children"]
-    rising_children = rising_data["data"]["children"]
-    hot_ids = {c["data"]["id"] for c in hot_children}
+    # "Rising": most-commented posts from the last 24 hours
+    rising_data = _fetch_json(_BASE, {
+        "subreddit": subreddit_name,
+        "size": config.MAX_POSTS_PER_SUB - int(config.MAX_POSTS_PER_SUB * 0.6),
+        "sort_type": "num_comments",
+        "sort": "desc",
+        "after": day_ago,
+    })
+
+    hot_ids = {p["id"] for p in hot_data.get("data", [])}
 
     seen_ids = set()
     posts = []
 
-    for child in hot_children + rising_children:
-        post_data = child["data"]
-        pid = post_data["id"]
-        if pid in seen_ids:
+    for post_data, feed_label in (
+        [(p, "hot") for p in hot_data.get("data", [])] +
+        [(p, "rising") for p in rising_data.get("data", [])]
+    ):
+        pid = post_data.get("id", "")
+        if not pid or pid in seen_ids:
             continue
         seen_ids.add(pid)
 
         score = post_data.get("score", 0)
         num_comments = post_data.get("num_comments", 0)
+        feed_type = "hot" if pid in hot_ids else "rising"
 
         posts.append({
-            "_id": pid,
             "subreddit": subreddit_name,
             "title": post_data.get("title", ""),
             "body": (post_data.get("selftext") or "")[:500],
@@ -68,33 +81,8 @@ def _scrape_subreddit(subreddit_name):
             "upvote_ratio": post_data.get("upvote_ratio", 0),
             "created_utc": post_data.get("created_utc", 0),
             "engagement_score": score + num_comments * 3,
-            "feed_type": "hot" if pid in hot_ids else "rising",
+            "feed_type": feed_type,
             "top_comments": [],
         })
 
-    # Fetch comments only for top 5 posts to limit request count
-    top_posts = sorted(posts, key=lambda p: p["engagement_score"], reverse=True)[:5]
-    for post in top_posts:
-        post["top_comments"] = _get_top_comments(subreddit_name, post["_id"])
-
-    for post in posts:
-        del post["_id"]
-
     return posts
-
-
-def _get_top_comments(subreddit_name, post_id):
-    try:
-        data = _fetch_json(
-            f"{_BASE}/r/{subreddit_name}/comments/{post_id}.json?limit=10&raw_json=1"
-        )
-        comments_listing = data[1]["data"]["children"]
-        comments = [
-            c["data"] for c in comments_listing
-            if c.get("kind") == "t1" and c["data"].get("body")
-        ]
-        ranked = sorted(comments, key=lambda c: c.get("score", 0), reverse=True)
-        return [c["body"][:300] for c in ranked[:3]]
-    except Exception as e:
-        print(f"Warning: could not fetch comments — {e}", flush=True)
-        return []
